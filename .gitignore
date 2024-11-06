@@ -1,0 +1,9 @@
+hosts.txt
+*.pyc
+src/software_versions.json
+data/*.nii
+data/*.nii.gz
+data/*.csv
+data/*
+picture_filter.json
+/docker-compose.generated.yml
