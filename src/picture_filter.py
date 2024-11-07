@@ -67,27 +67,32 @@ def get_sub_image_from_file_path(file_path, mask_image, mask_indices):
     #sub_image_array = get_sub_image(image_array, mask_indices)
     return image_array
 
-# Check if scans are present for a given anon_id
+# Find scan file for a given anon_id and scan_type
+def find_scan_files(anon_id, scan_type):
+    dataset_dir = os.environ.get('DATASET_DIR', '/data/')
+    search_path = dataset_dir + anon_id + "-*[0-9]*-" + scan_type + ".nii.gz"
+    found_nifti_files = glob.glob(search_path)
+    if len(found_nifti_files) > 0:
+        return found_nifti_files[0]
+    else:
+        return None
+
+# Find scans for a given anon_id
 @lru_cache(maxsize=4096)
 def check_data_entry(anon_id):
-    dataset_dir = os.environ.get('DATASET_DIR', '/data/')
-
     scan_type_mapping = {
-        'segmentation': 'ENT',
-        'residue': 'ENR'
+        'segmentation': ['ENT', 'NET'],
+        'residue': ['ENR', 'NER']
     }
 
-    results = []
+    results = {}
+    for lesion_type, labels in scan_type_mapping.items():
+        for label in labels:
+            if not(results[lesion_type]):
+                results[lesion_type] = find_scan_files(anon_id, label)
 
-    for scan_type, label in scan_type_mapping.items():
-        search_path = dataset_dir + anon_id + "-*[0-9]*-" +  label + ".nii.gz"
-        found_nifti_files = glob.glob(search_path)
-
-        if(len(found_nifti_files) > 0):
-            results.append(found_nifti_files[0])
-
-    if (len(results) == 2):
-        return results
+    if (results['segmentation'] and results['residue']):
+        return results['segmentation'], results['residue']
     else:
         return [None, None]
 
@@ -441,15 +446,17 @@ def get_array_union(array_1, array_2):
     union_array = (array_1 + array_2) > 0
     return union_array
 
-# Optimized function to get ENR file path from ENT file path
+# Optimized function to get ENR/NER file path from ENT/NET file path
 @lru_cache(maxsize=4096)
-def get_enr_from_ent(ent_file_path):
+def get_residue_from_segmentation(segmentation_file_path):
     dataset_dir = os.environ.get('DATASET_DIR', '/data/')
-    ent_filename = os.path.basename(ent_file_path)
-    anon_id = ent_filename.split('-')[0]
+    segmentation_filename = os.path.basename(segmentation_file_path)
+    anon_id = segmentation_filename.split('-')[0]
 
     search_path = dataset_dir + anon_id + "-*[0-9]*-ENR.nii.gz"
     found_nifti_files = glob.glob(search_path)
+    search_path = dataset_dir + anon_id + "-*[0-9]*-NER.nii.gz"
+    found_nifti_files += glob.glob(search_path)
 
     if(len(found_nifti_files) > 0):
         return found_nifti_files[0]
@@ -471,15 +478,15 @@ def get_summed_array(nifti_files, mask_image, mask_indices, union=False):
             # If union is true, get the ENR image as well
             if union == True:
                 if idx == 0:
-                    enr_nifti_file = get_enr_from_ent(nifti_file)
-                    input_1_enr = get_sub_image_from_file_path(
-                        enr_nifti_file, mask_image, mask_indices)
-                    input_1 = get_array_union(input_1, input_1_enr).to(torch.float32)
+                    residue_nifti_file = get_residue_from_segmentation(nifti_file)
+                    input_1_residue = get_sub_image_from_file_path(
+                        residue_nifti_file, mask_image, mask_indices)
+                    input_1 = get_array_union(input_1, input_1_residue).to(torch.float32)
 
-                enr_2_nifti_file = get_enr_from_ent(nifti_files[idx + 1])
-                input_2_enr = get_sub_image_from_file_path(
-                    enr_2_nifti_file, mask_image, mask_indices)
-                input_2 = get_array_union(input_2, input_2_enr)
+                residue_2_nifti_file = get_residue_from_segmentation(nifti_files[idx + 1])
+                input_2_residue = get_sub_image_from_file_path(
+                    residue_2_nifti_file, mask_image, mask_indices)
+                input_2 = get_array_union(input_2, input_2_residue)
 
             summed_array = input_1 + input_2
 
